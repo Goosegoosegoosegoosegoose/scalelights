@@ -14,6 +14,11 @@
 --   center = relative maj/min
 --   top right = scale type
 --   bottom right = keyboard
+--
+-- routing: LinnStrument -> norns
+--   -> Electra One Mini -> Nymphes
+--   (LinnStrument notes are passed
+--   through to the "out device")
 
 ---------------------------------------------------------------- theory
 
@@ -67,6 +72,7 @@ local WHITE = {[0]=10, [2]=11, [4]=12, [5]=13, [7]=14, [9]=15, [11]=16}   -- row
 local BLACK = {[1]=11, [3]=12, [6]=14, [8]=15, [10]=16}                   -- row 7
 
 local linn
+local out
 local g = grid.connect()
 local painter
 local learning = false   -- waiting for you to press the bottom-left pad
@@ -183,12 +189,19 @@ local function reset_linnstrument()
   if not linn then return end
   nrpn(245, 0, params:get("channel"))
 end
--- find the LinnStrument among the MIDI ports by name
-local function find_linnstrument()
+-- find a MIDI port by name (skips control-only ports like the Electra's CTRL)
+local function find_port(pattern)
   for i, v in ipairs(midi.vports) do
-    if v.name and v.name:lower():find("linnstrument") then return i end
+    local n = v.name and v.name:lower()
+    if n and n:find(pattern) and not n:find("ctrl") then return i end
   end
   return nil
+end
+
+-- silence whatever the synth is holding (all 16 channels, for MPE)
+local function all_notes_off(dev)
+  if not dev then return end
+  for ch = 1, 16 do dev:cc(123, 0, ch) end
 end
 
 local function send_lights()
@@ -353,14 +366,20 @@ local function grid_key(x, y, z)
   end
 end
 
--- incoming notes from the LinnStrument: used to learn the bottom-left pad's note
+-- incoming from the LinnStrument: learn the bottom-left pad, otherwise
+-- pass everything (notes, MPE pitch bend / pressure / CC74) on to the synth
 function linn_event(data)
-  if not learning then return end
-  local msg = midi.to_msg(data)
-  if msg.type == "note_on" and msg.vel > 0 then
-    learning = false
-    params:set("base_note", msg.note)   -- its action repaints the lights
-    redraw()
+  if learning then
+    local msg = midi.to_msg(data)
+    if msg.type == "note_on" and msg.vel > 0 then
+      learning = false
+      params:set("base_note", msg.note)   -- its action repaints the lights
+      redraw()
+    end
+    return   -- the learn press doesn't sound
+  end
+  if out and out ~= linn and params:get("thru") == 2 then
+    out:send(data)
   end
 end
 
@@ -387,6 +406,17 @@ function init()
     redraw()
   end)
 
+  params:add_separator("synth out")
+  params:add_number("out_dev", "out device (Electra Mini)", 1, 16, 2)
+  params:set_action("out_dev", function(v)
+    all_notes_off(out)
+    out = midi.connect(v)
+  end)
+  params:add_option("thru", "LinnStrument thru", {"off", "on"}, 2)
+  params:set_action("thru", function(v)
+    if v == 1 then all_notes_off(out) end
+  end)
+
   params:add_separator("lights")
   params:add_option("style", "style", STYLES, 1)
   params:add_option("root_col", "root", COLORS, 3)
@@ -406,10 +436,13 @@ function init()
 
   params:read()   -- restore your saved tuning/colors, if any
   if params:get("style") > #STYLES then params:set("style", 1, true) end
-  local found = find_linnstrument()
+  local found = find_port("linnstrument")
   if found then params:set("midi_dev", found, true) end
+  local mini = find_port("electra")
+  if mini then params:set("out_dev", mini, true) end
   linn = midi.connect(params:get("midi_dev"))
   linn.event = linn_event
+  out = midi.connect(params:get("out_dev"))
   reset_linnstrument()
   params:bang()
   changed()
@@ -418,6 +451,7 @@ end
 function cleanup()
   params:write()
   if painter then clock.cancel(painter) end
+  all_notes_off(out)
   paint(true, false)   -- clear the scale colors
   g:all(0)
   g:refresh()

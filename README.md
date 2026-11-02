@@ -36,4 +36,22 @@ Blue and red are left to the LinnStrument's own 4ths layout.
 3. In PARAMETERS > EDIT, run **learn bottom-left note** and press the LinnStrument's
    bottom-left pad. Leave `row offset` at 5 for 4ths tuning.
 
+## Routing
+
+```
+LinnStrument ──USB──▶ norns ──USB──▶ Electra One Mini ──▶ Nymphes
+```
+
+The LinnStrument plugs straight into norns. Everything it plays (notes plus MPE
+pitch bend, pressure and CC74, on their original channels) is passed on to the
+**out device**, the Electra One Mini, which forwards it to the Nymphes. The scale-light
+CCs only go back to the LinnStrument, never to the synth.
+
+- `midi device` / `out device (Electra Mini)` are picked automatically by name
+  (`linnstrument`, `electra`); check them in PARAMETERS > EDIT if a port is missed.
+- `LinnStrument thru` turns the pass-through off if you only want lights.
+- On the Mini, the USB port norns sends on has to be routed to the port the Nymphes is on.
+- Switching the out device, turning thru off, or leaving the script sends all-notes-off
+  on all 16 channels so nothing hangs.
+
 Lights are set with LinnStrument CC20 (column), CC21 (row) and CC22 (color).
