@@ -6,9 +6,13 @@
 -- E3: major / natural minor /
 --     harmonic minor
 -- K2: relative major <-> minor
--- K3: page (circle / degrees)
+-- K3: page (circle / degrees /
+--     playing: notes + chord)
 -- E1: light style (root + triad /
---     root + scale)
+--     root + scale / degree colors /
+--     one octave)
+-- grid row 8, cols 1-2: move the
+--     one-octave box down / up
 --
 -- grid: ring = circle of 5ths
 --   center = relative maj/min
@@ -62,7 +66,12 @@ local COLUMNS = 25   -- LinnStrument 200
 --   root = yellow, 3rd & 5th (tonic chord) = green, other scale notes = white
 local DEGREE_COLORS = {2, 8, 3, 8, 3, 8, 8}
 local DEGREE_COLOR_NAMES = {"yellow", "white", "green", "white", "green", "white", "white"}
-local STYLES = {"root + triad", "root + scale"}
+-- "degree colors" style: every degree its own color (no blue/red)
+--   1 yellow, 2 white, 3 green, 4 cyan, 5 lime, 6 pink, 7 orange
+local RAINBOW = {2, 8, 3, 4, 10, 11, 9}
+local RAINBOW_NAMES = {"yellow", "white", "green", "cyan", "lime", "pink", "orange"}
+local STYLES = {"root + triad", "root + scale", "degree colors", "one octave"}
+local SHAPE_BTNS = {{1,8},{2,8}}   -- grid: one-octave box down / up
 
 -- grid layout: a 12-point ring in the left 7x7, clockwise from the top
 local RING = {{4,1},{6,1},{7,2},{7,4},{7,6},{6,7},{4,7},{2,7},{1,6},{1,4},{1,2},{2,1}}
@@ -124,15 +133,120 @@ local function relative_name()
   return "rel: " .. MAJOR_KEYS[pos] .. " major"
 end
 
+---------------------------------------------------------------- what's being played
+
+local held = {}   -- [channel * 128 + note] = note  (MPE: one channel per finger)
+
+local SHARP_NAMES = {"C","C#","D","D#","E","F","F#","G","G#","A","A#","B"}
+local FLAT_NAMES  = {"C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"}
+
+-- spell a pitch class: scale spelling if it's in the key, else follow the key signature
+local function note_name(pc)
+  for _, n in ipairs(spell_scale()) do if n.pc == pc then return n.name end end
+  return (pos >= 8) and FLAT_NAMES[pc + 1] or SHARP_NAMES[pc + 1]
+end
+
+-- intervals above the root -> chord suffix, roman-numeral case, numeral suffix
+local CHORDS = {
+  {"0,4,7",     "",      "up", ""},
+  {"0,3,7",     "m",     "lo", ""},
+  {"0,3,6",     "dim",   "lo", "o"},
+  {"0,4,8",     "aug",   "up", "+"},
+  {"0,2,7",     "sus2",  "up", "sus2"},
+  {"0,5,7",     "sus4",  "up", "sus4"},
+  {"0,4,7,11",  "maj7",  "up", "maj7"},
+  {"0,4,7,10",  "7",     "up", "7"},
+  {"0,3,7,10",  "m7",    "lo", "7"},
+  {"0,3,6,10",  "m7b5",  "lo", " half-dim7"},
+  {"0,3,6,9",   "dim7",  "lo", "o7"},
+  {"0,3,7,11",  "m(maj7)", "lo", "maj7"},
+  {"0,4,8,11",  "+maj7", "up", "+maj7"},
+  {"0,4,7,9",   "6",     "up", "6"},
+  {"0,3,7,9",   "m6",    "lo", "6"},
+  {"0,2,4,7",   "add9",  "up", "add9"},
+  {"0,2,3,7",   "m(add9)", "lo", "add9"},
+  {"0,4,10",    "7(no5)", "up", "7"},
+  {"0,3,10",    "m7(no5)", "lo", "7"},
+  {"0,4,11",    "maj7(no5)", "up", "maj7"},
+  {"0,2,4,7,10","9",     "up", "9"},
+  {"0,2,4,7,11","maj9",  "up", "maj9"},
+  {"0,2,3,7,10","m9",    "lo", "9"},
+}
+local INTERVALS = {"m2","M2","m3","M3","P4","tritone","P5","m6","M6","m7","M7"}
+local ROMAN = {"I","II","III","IV","V","VI","VII"}
+
+local function held_notes()
+  local notes, seen = {}, {}
+  for _, n in pairs(held) do
+    if not seen[n] then seen[n] = true; notes[#notes + 1] = n end
+  end
+  table.sort(notes)
+  return notes
+end
+
+-- returns name (e.g. "Dm7/C"), roman numeral in this key (or nil), and the interval
+-- name when only two pitch classes are held
+local function identify(notes)
+  if #notes == 0 then return nil end
+  local pcs, set = {}, {}
+  for _, n in ipairs(notes) do
+    local pc = n % 12
+    if not set[pc] then set[pc] = true; pcs[#pcs + 1] = pc end
+  end
+  local bass = notes[1] % 12
+  if #pcs == 1 then return note_name(bass), nil end
+  if #pcs == 2 then
+    local hi = (pcs[1] == bass) and pcs[2] or pcs[1]
+    return note_name(bass) .. " + " .. note_name(hi), nil, INTERVALS[(hi - bass) % 12]
+  end
+  -- try the bass as the root first, then every other note (= an inversion)
+  local order = {bass}
+  for _, pc in ipairs(pcs) do if pc ~= bass then order[#order + 1] = pc end end
+  for _, root in ipairs(order) do
+    local ivs = {}
+    for _, pc in ipairs(pcs) do ivs[#ivs + 1] = (pc - root) % 12 end
+    table.sort(ivs)
+    local key = table.concat(ivs, ",")
+    for _, c in ipairs(CHORDS) do
+      if c[1] == key then
+        local name = note_name(root) .. c[2]
+        if root ~= bass then name = name .. "/" .. note_name(bass) end
+        local roman
+        local d = degree_map(spell_scale())[root]
+        if d then
+          roman = ROMAN[d]
+          if c[3] == "lo" then roman = roman:lower() end
+          roman = roman .. c[4]
+          if root ~= bass then roman = roman .. " (inversion)" end
+        end
+        return name, roman
+      end
+    end
+  end
+  -- not a chord we know: list the pitch classes
+  local names = {}
+  for _, pc in ipairs(pcs) do names[#names + 1] = note_name(pc) end
+  return table.concat(names, " "), nil
+end
+
 ---------------------------------------------------------------- linnstrument lights
 
 local function color_value(id) return params:get(id) - 1 end
 
 local OFF = 7   -- CC22 "off": every pad outside the scale goes dark
 
+local function raised7(d)
+  return d == 7 and mode == 3 and params:get("mark_raised7") == 2
+end
+
 local function pad_color(pc, deg)
   local d = deg[pc]
   if not d then return OFF end
+
+  if params:get("style") >= 3 then
+    if raised7(d) then return color_value("raised7_col") end
+    return RAINBOW[d]
+  end
 
   if params:get("style") == 1 then
     -- root + triad (harmonic minor's raised 7th can still be marked)
@@ -153,19 +267,73 @@ local function pad_color(pc, deg)
   return color_value("scale_col")
 end
 
+local function pad_note(col, row)
+  return params:get("base_note") + (col - 1) + row * params:get("row_offset")
+end
+
+-- every pad on the surface that plays the tonic, low to high
+local function root_pads()
+  local tonic = spell_scale()[1].pc
+  local roots = {}
+  for row = 0, 7 do
+    for col = 1, COLUMNS do
+      local n = pad_note(col, row)
+      if n % 12 == tonic then roots[#roots + 1] = {col = col, row = row, note = n} end
+    end
+  end
+  table.sort(roots, function(a, b)
+    if a.note ~= b.note then return a.note < b.note end
+    return a.col < b.col
+  end)
+  return roots
+end
+
+local shape_pos = 1   -- which root the one-octave box starts from
+
+-- one playable octave, root to root, kept in a compact box
+-- (columns root-1 .. root+3, the usual 4ths fingering)
+local function octave_box()
+  local roots = root_pads()
+  if #roots == 0 then return {} end
+  shape_pos = util.clamp(shape_pos, 1, #roots)
+  local a = roots[shape_pos]
+  local targets = {}
+  for _, iv in ipairs(MODES[mode].intervals) do targets[#targets + 1] = a.note + iv end
+  targets[#targets + 1] = a.note + 12
+  local box = {}
+  for _, t in ipairs(targets) do
+    local best, cost
+    for row = 0, 7 do
+      local col = t - params:get("base_note") - row * params:get("row_offset") + 1
+      if col >= 1 and col <= COLUMNS then
+        local c = math.abs(col - (a.col + 1)) + ((row < a.row) and 0.5 or 0)
+        if not cost or c < cost then best, cost = {col, row}, c end
+      end
+    end
+    if best then box[best[2] * 100 + best[1]] = true end
+  end
+  return box
+end
+
 -- CC20 = column, CC21 = row, CC22 = color. Row is persistent, so set it once per row.
 local function paint(clear, slow)
   if not linn then return end
   local ch = params:get("channel")
   local cols = COLUMNS
-  local base, offset = params:get("base_note"), params:get("row_offset")
   local deg = degree_map(spell_scale())
+  local box = (params:get("style") == 4) and octave_box() or nil
+  local rest = params:get("box_rest")
   for row = 0, 7 do
     linn:cc(21, row, ch)
     for col = 1, cols do
       local color = 0
       if not clear then
-        color = pad_color((base + (col - 1) + row * offset) % 12, deg)
+        local pc = pad_note(col, row) % 12
+        color = pad_color(pc, deg)
+        if box and not box[row * 100 + col] and color ~= OFF then
+          -- outside the box: dark, or one plain color so the box stands out
+          color = (rest == 2) and color_value("scale_col") or OFF
+        end
       end
       linn:cc(20, col, ch)
       linn:cc(22, color, ch)
@@ -242,6 +410,9 @@ local function grid_redraw()
     g:led(x, y, deg[pc] and level(deg[pc]) or 0)
   end
   for d = 1, 7 do g:led(9 + d, 4, level(d)) end
+  if params:get("style") == 4 then
+    for _, c in ipairs(SHAPE_BTNS) do g:led(c[1], c[2], 8) end
+  end
   g:refresh()
 end
 
@@ -286,8 +457,49 @@ local function draw_circle()
   if learning then
     screen.level(15)
     screen.text("press bottom-left")
+  elseif #held_notes() > 0 then
+    screen.level(15)
+    screen.text(identify(held_notes()))
   else
     screen.text("E1: " .. STYLES[params:get("style")])
+  end
+end
+
+local function draw_playing()
+  local notes = held_notes()
+  screen.level(3)
+  screen.move(0, 7)
+  screen.text("playing in " .. tonic_name() .. " " .. MODES[mode].short)
+  if #notes == 0 then
+    screen.level(4)
+    screen.move(64, 38)
+    screen.text_center("play something")
+    return
+  end
+  local name, roman, interval = identify(notes)
+  screen.font_size(16)
+  screen.level(15)
+  screen.move(0, 26)
+  screen.text(name)
+  screen.font_size(8)
+  screen.level(10)
+  screen.move(0, 38)
+  screen.text(roman or interval or "")
+  -- each note, low to high, with its scale degree ("-" = outside the key)
+  local deg = degree_map(spell_scale())
+  local x = 0
+  for _, n in ipairs(notes) do
+    local pc = n % 12
+    local label = note_name(pc) .. (n // 12 - 1)
+    local w = screen.text_extents(label)
+    if x + w > 128 then break end
+    screen.level(deg[pc] and 15 or 4)
+    screen.move(x, 52)
+    screen.text(label)
+    screen.level(5)
+    screen.move(x, 62)
+    screen.text(deg[pc] and tostring(deg[pc]) or "-")
+    x = x + w + 6
   end
 end
 
@@ -301,8 +513,11 @@ local function draw_degrees()
     screen.move(0, y);  screen.text(i)
     screen.move(10, y); screen.text(scale[i].name)
     screen.move(28, y); screen.text(m.chords[i])
-    if params:get("style") == 1 then
-      screen.move(54, y); screen.text(DEGREE_COLOR_NAMES[i])
+    local style = params:get("style")
+    if style == 1 or style >= 3 then
+      local cname = (style == 1) and DEGREE_COLOR_NAMES[i] or RAINBOW_NAMES[i]
+      if raised and params:get("mark_raised7") == 2 then cname = COLORS[params:get("raised7_col")] end
+      screen.move(54, y); screen.text(cname)
       screen.move(88, y); screen.text(DEGREE_NAMES[i] and DEGREE_NAMES[i]:sub(1, 7) or m.seventh:sub(1, 7))
     else
       screen.move(54, y); screen.text(DEGREE_NAMES[i] or m.seventh)
@@ -313,7 +528,9 @@ end
 function redraw()
   screen.clear()
   screen.font_size(8)
-  if page == 1 then draw_circle() else draw_degrees() end
+  if page == 1 then draw_circle()
+  elseif page == 2 then draw_degrees()
+  else draw_playing() end
   screen.update()
 end
 
@@ -327,11 +544,10 @@ end
 
 function enc(n, d)
   if n == 1 then
-    params:delta("style", d)
-    grid_redraw()
-    redraw()
+    params:delta("style", d)   -- its action repaints the lights
   elseif n == 2 then
     pos = util.wrap(pos + d, 1, 12)
+    shape_pos = 1
     changed()
   elseif n == 3 then
     mode = util.clamp(mode + d, 1, 3)
@@ -346,7 +562,7 @@ function key(n, z)
     mode = (mode == 1) and 2 or 1
     changed()
   elseif n == 3 then
-    page = (page == 1) and 2 or 1
+    page = page % 3 + 1
     redraw()
   end
 end
@@ -363,6 +579,10 @@ local function grid_key(x, y, z)
   end
   for i, c in ipairs(MODE_BTNS) do
     if c[1] == x and c[2] == y then mode = i; changed(); return end
+  end
+  if params:get("style") == 4 then
+    if x == SHAPE_BTNS[1][1] and y == SHAPE_BTNS[1][2] then shape_pos = shape_pos - 1; changed() end
+    if x == SHAPE_BTNS[2][1] and y == SHAPE_BTNS[2][2] then shape_pos = shape_pos + 1; changed() end
   end
 end
 
@@ -381,6 +601,14 @@ function linn_event(data)
   if out and out ~= linn and params:get("thru") == 2 then
     out:send(data)
   end
+  local msg = midi.to_msg(data)
+  if msg.type == "note_on" and msg.vel > 0 then
+    held[msg.ch * 128 + msg.note] = msg.note
+    redraw()
+  elseif msg.type == "note_off" or (msg.type == "note_on" and msg.vel == 0) then
+    held[msg.ch * 128 + msg.note] = nil
+    redraw()
+  end
 end
 
 ---------------------------------------------------------------- init
@@ -394,6 +622,7 @@ function init()
   params:set_action("midi_dev", function(v)
     linn = midi.connect(v)
     linn.event = linn_event
+    held = {}
     reset_linnstrument()
     send_lights()
   end)
@@ -425,14 +654,18 @@ function init()
   params:add_option("triad_col", "triad 3rd & 5th", COLORS, 4)
   params:add_option("mark_raised7", "mark raised 7th", {"off", "on"}, 2)
   params:add_option("raised7_col", "raised 7th", COLORS, 7)
+  params:add_option("box_rest", "one octave: outside box", {"off", "scale tones"}, 1)
   params:add_trigger("resend", "resend lights")
   params:set_action("resend", function() send_lights() end)
 
-  for _, id in ipairs({"channel", "base_note", "row_offset", "style",
-                       "root_col", "scale_col",
+  for _, id in ipairs({"channel", "base_note", "row_offset",
+                       "root_col", "scale_col", "box_rest",
                        "triad", "triad_col", "mark_raised7", "raised7_col"}) do
     params:set_action(id, function() send_lights() end)
   end
+  params:set_action("style", function()
+    send_lights(); grid_redraw(); redraw()
+  end)
 
   params:read()   -- restore your saved tuning/colors, if any
   if params:get("style") > #STYLES then params:set("style", 1, true) end

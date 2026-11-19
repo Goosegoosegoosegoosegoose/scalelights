@@ -8,15 +8,38 @@ a circle of fifths on the grid.
 
 | | |
 |---|---|
-| E1 | light style: **root + triad** / **root + scale** |
+| E1 | light style: **root + triad** / **root + scale** / **degree colors** / **one octave** |
 | E2 | key, around the circle of fifths |
 | E3 | major / natural minor / harmonic minor |
 | K2 | relative major ↔ minor |
-| K3 | screen page: circle of fifths / scale degrees |
+| K3 | screen page: circle of fifths / scale degrees / **playing** |
 
 **Grid:** ring of 12 keys = circle of fifths (C at top, neighbouring keys medium),
 center = relative major/minor, top right = scale type, row 4 = degree ladder,
-bottom right = one-octave keyboard.
+bottom right = one-octave keyboard. In **one octave** style, row 8 cols 1–2 move
+the box down / up to the next root.
+
+## Seeing the whole scale
+
+- **degree colors** — every degree gets its own color, so you can follow
+  1-2-3-4-5-6-7 across the surface:
+  1 yellow · 2 white · 3 green · 4 cyan · 5 lime · 6 pink · 7 orange
+  (raised 7th in harmonic minor: magenta).
+- **one octave** — lights a single root-to-root run in a compact 4-column hand
+  shape, in degree colors. Everything else goes dark (or one plain color: set
+  `one octave: outside box` to **scale tones**). Move it with grid row 8 cols 1–2.
+
+## What you're playing
+
+Hold notes on the LinnStrument and norns names them:
+
+- **playing** page (K3): big chord name (e.g. `Dm7`, `C/E`), the roman numeral in
+  the current key (`ii7`, `I (inversion)`, `V7`, `viio`…), and every held note low
+  to high with its octave and scale degree (`-` = outside the key).
+- Two notes show the interval (`M3`, `P5`, `tritone`…).
+- Knows triads, sus2/4, 6ths, 7ths (maj7, 7, m7, m7b5, dim7, m(maj7), +maj7),
+  add9 and 9ths, in any inversion. Anything else is listed note by note.
+- The circle page's bottom line also shows the chord while you play.
 
 ## Colors (root + triad)
 
