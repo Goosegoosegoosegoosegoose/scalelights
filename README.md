@@ -8,7 +8,7 @@ a circle of fifths on the grid.
 
 | | |
 |---|---|
-| E1 | light style: **root + triad** / **root + scale** / **degree colors** / **one octave** |
+| E1 | light style: **root + triad** / **root + scale** / **rainbow** / **one octave** / **follow the lights** |
 | E2 | key, around the circle of fifths |
 | E3 | major / natural minor / harmonic minor |
 | K2 | relative major ↔ minor |
@@ -21,13 +21,23 @@ the box down / up to the next root.
 
 ## Seeing the whole scale
 
-- **degree colors** — every degree gets its own color, so you can follow
-  1-2-3-4-5-6-7 across the surface:
-  1 yellow · 2 white · 3 green · 4 cyan · 5 lime · 6 pink · 7 orange
-  (raised 7th in harmonic minor: magenta).
+- **rainbow** — root is white, then the colors walk around the color wheel as the
+  scale goes up, so neighbouring degrees look related and a run up the scale is a sweep:
+  1 white · 2 orange · 3 yellow · 4 lime · 5 green · 6 cyan · 7 magenta
+  (raised 7th in harmonic minor: pink).
 - **one octave** — lights a single root-to-root run in a compact 4-column hand
-  shape, in degree colors. Everything else goes dark (or one plain color: set
+  shape, in rainbow colors. Everything else goes dark (or one plain color: set
   `one octave: outside box` to **scale tones**). Move it with grid row 8 cols 1–2.
+
+- **follow the lights** — a scale trainer. Every root pad blinks; play one, and
+  the next note of the scale blinks. Hit it and it stays lit in its rainbow color,
+  so the scale builds up under your fingers. Go up to the octave and back down;
+  wrong notes are ignored ("not that one" on screen). When you finish, the whole
+  scale lights for two seconds, then it starts over. The circle page's bottom line
+  says what's next, e.g. `next: E (3) up`. Changing key or scale restarts the run.
+
+The LinnStrument has no per-pad brightness over MIDI — each pad is one of 10 colors
+or off — so order is shown with the color wheel and with blinking instead.
 
 ## What you're playing
 

@@ -9,8 +9,8 @@
 -- K3: page (circle / degrees /
 --     playing: notes + chord)
 -- E1: light style (root + triad /
---     root + scale / degree colors /
---     one octave)
+--     root + scale / rainbow /
+--     one octave / follow the lights)
 -- grid row 8, cols 1-2: move the
 --     one-octave box down / up
 --
@@ -66,11 +66,15 @@ local COLUMNS = 25   -- LinnStrument 200
 --   root = yellow, 3rd & 5th (tonic chord) = green, other scale notes = white
 local DEGREE_COLORS = {2, 8, 3, 8, 3, 8, 8}
 local DEGREE_COLOR_NAMES = {"yellow", "white", "green", "white", "green", "white", "white"}
--- "degree colors" style: every degree its own color (no blue/red)
---   1 yellow, 2 white, 3 green, 4 cyan, 5 lime, 6 pink, 7 orange
-local RAINBOW = {2, 8, 3, 4, 10, 11, 9}
-local RAINBOW_NAMES = {"yellow", "white", "green", "cyan", "lime", "pink", "orange"}
-local STYLES = {"root + triad", "root + scale", "degree colors", "one octave"}
+-- "rainbow" style: root white, then the colors step around the color wheel
+-- as the scale goes up (no blue/red), so neighbouring degrees look related
+--   1 white, 2 orange, 3 yellow, 4 lime, 5 green, 6 cyan, 7 magenta
+--   (raised 7th in harmonic minor: pink)
+local RAINBOW = {8, 9, 2, 10, 3, 4, 6}
+local RAINBOW_NAMES = {"white", "orange", "yellow", "lime", "green", "cyan", "magenta"}
+local RAISED7_RAINBOW = 11   -- pink
+local STYLES = {"root + triad", "root + scale", "rainbow", "one octave", "follow the lights"}
+local FOLLOW = 5
 local SHAPE_BTNS = {{1,8},{2,8}}   -- grid: one-octave box down / up
 
 -- grid layout: a 12-point ring in the left 7x7, clockwise from the top
@@ -244,7 +248,7 @@ local function pad_color(pc, deg)
   if not d then return OFF end
 
   if params:get("style") >= 3 then
-    if raised7(d) then return color_value("raised7_col") end
+    if raised7(d) then return RAISED7_RAINBOW end
     return RAINBOW[d]
   end
 
@@ -290,6 +294,26 @@ end
 
 local shape_pos = 1   -- which root the one-octave box starts from
 
+-- "follow the lights": the next note blinks; play it and it stays lit
+local trainer = {
+  seq = nil,     -- the run: root up to the octave and back down
+  i = 1,         -- which note of the run is next
+  trail = {},    -- [row * 100 + col] = color, pads you've already played
+  done = false,
+  blink = nil,   -- clock id
+  missed = false,
+}
+
+local function pads_for(test)
+  local list = {}
+  for row = 0, 7 do
+    for col = 1, COLUMNS do
+      if test(pad_note(col, row)) then list[#list + 1] = {col, row} end
+    end
+  end
+  return list
+end
+
 -- one playable octave, root to root, kept in a compact box
 -- (columns root-1 .. root+3, the usual 4ths fingering)
 local function octave_box()
@@ -322,6 +346,7 @@ local function paint(clear, slow)
   local cols = COLUMNS
   local deg = degree_map(spell_scale())
   local box = (params:get("style") == 4) and octave_box() or nil
+  local follow = (params:get("style") == FOLLOW) and not trainer.done
   local rest = params:get("box_rest")
   for row = 0, 7 do
     linn:cc(21, row, ch)
@@ -330,6 +355,7 @@ local function paint(clear, slow)
       if not clear then
         local pc = pad_note(col, row) % 12
         color = pad_color(pc, deg)
+        if follow then color = trainer.trail[row * 100 + col] or OFF end
         if box and not box[row * 100 + col] and color ~= OFF then
           -- outside the box: dark, or one plain color so the box stands out
           color = (rest == 2) and color_value("scale_col") or OFF
@@ -378,6 +404,111 @@ local function send_lights()
     paint(false, true)
     painter = nil
   end)
+end
+
+local function set_pad(col, row, color)
+  if not linn then return end
+  local ch = params:get("channel")
+  linn:cc(21, row, ch)
+  linn:cc(20, col, ch)
+  linn:cc(22, color, ch)
+end
+
+-- the pads that should blink right now, and their color
+local function trainer_targets()
+  local deg = degree_map(spell_scale())
+  if not trainer.seq then
+    -- waiting for you to pick a root: every root pad blinks
+    local tonic = spell_scale()[1].pc
+    return pads_for(function(n) return n % 12 == tonic end), pad_color(tonic, deg)
+  end
+  local target = trainer.seq[trainer.i]
+  return pads_for(function(n) return n == target end), pad_color(target % 12, deg)
+end
+
+local function trainer_next_name()
+  if trainer.done then return "done!" end
+  if not trainer.seq then return "play any " .. spell_scale()[1].name end
+  local n = trainer.seq[trainer.i]
+  local d = degree_map(spell_scale())[n % 12]
+  local dir = (trainer.i <= 8) and "up" or "down"
+  return "next: " .. spell_scale()[d].name .. " (" .. d .. ") " .. dir
+end
+
+local function trainer_stop()
+  if trainer.blink then clock.cancel(trainer.blink) end
+  trainer.blink = nil
+end
+
+local function trainer_reset()
+  trainer.seq, trainer.i, trainer.trail, trainer.done, trainer.missed = nil, 1, {}, false, false
+end
+
+local function trainer_start()
+  trainer_stop()
+  trainer.blink = clock.run(function()
+    local on = true
+    while true do
+      if not trainer.done and not painter then
+        local pads, color = trainer_targets()
+        for _, p in ipairs(pads) do
+          -- off-beat: a pad you already played shows its steady color, others go dark
+          set_pad(p[1], p[2], on and color or (trainer.trail[p[2] * 100 + p[1]] or OFF))
+        end
+      end
+      on = not on
+      clock.sleep(0.25)
+    end
+  end)
+end
+
+-- light the pads you just hit for good, and move the blink on
+local function trainer_hit(note)
+  local deg = degree_map(spell_scale())
+  for _, p in ipairs(pads_for(function(n) return n == note end)) do
+    local color = pad_color(note % 12, deg)
+    trainer.trail[p[2] * 100 + p[1]] = color
+    set_pad(p[1], p[2], color)
+  end
+end
+
+local function trainer_note(note)
+  local deg = degree_map(spell_scale())
+  if trainer.done then return end
+  if not trainer.seq then
+    if note % 12 ~= spell_scale()[1].pc then trainer.missed = true; return end
+    -- build the run from the root you chose
+    local seq = {}
+    for _, iv in ipairs(MODES[mode].intervals) do seq[#seq + 1] = note + iv end
+    seq[#seq + 1] = note + 12
+    for k = 7, 1, -1 do seq[#seq + 1] = note + MODES[mode].intervals[k] end
+    -- the root blinks everywhere; turn off the root pads that weren't played
+    for _, p in ipairs(pads_for(function(n) return n % 12 == note % 12 end)) do
+      set_pad(p[1], p[2], OFF)
+    end
+    trainer.seq, trainer.i = seq, 2
+    trainer_hit(note)
+    trainer.missed = false
+    return
+  end
+  if note ~= trainer.seq[trainer.i] then trainer.missed = true; return end
+  trainer.missed = false
+  -- the pads you're leaving stop blinking: make sure they're steady
+  trainer_hit(note)
+  trainer.i = trainer.i + 1
+  if trainer.i > #trainer.seq then
+    -- made it up and back: show the whole scale, then start over
+    trainer.done = true
+    send_lights()
+    clock.run(function()
+      clock.sleep(2)
+      if params:get("style") == FOLLOW then
+        trainer_reset()
+        send_lights()
+        redraw()
+      end
+    end)
+  end
 end
 
 ---------------------------------------------------------------- grid
@@ -457,6 +588,9 @@ local function draw_circle()
   if learning then
     screen.level(15)
     screen.text("press bottom-left")
+  elseif params:get("style") == FOLLOW then
+    screen.level(15)
+    screen.text(trainer.missed and "not that one - " .. trainer_next_name():gsub("next: ", "") or trainer_next_name())
   elseif #held_notes() > 0 then
     screen.level(15)
     screen.text(identify(held_notes()))
@@ -516,7 +650,9 @@ local function draw_degrees()
     local style = params:get("style")
     if style == 1 or style >= 3 then
       local cname = (style == 1) and DEGREE_COLOR_NAMES[i] or RAINBOW_NAMES[i]
-      if raised and params:get("mark_raised7") == 2 then cname = COLORS[params:get("raised7_col")] end
+      if raised and params:get("mark_raised7") == 2 then
+        cname = (style == 1) and COLORS[params:get("raised7_col")] or "pink"
+      end
       screen.move(54, y); screen.text(cname)
       screen.move(88, y); screen.text(DEGREE_NAMES[i] and DEGREE_NAMES[i]:sub(1, 7) or m.seventh:sub(1, 7))
     else
@@ -537,6 +673,7 @@ end
 ---------------------------------------------------------------- controls
 
 local function changed()
+  trainer_reset()
   send_lights()
   grid_redraw()
   redraw()
@@ -604,6 +741,7 @@ function linn_event(data)
   local msg = midi.to_msg(data)
   if msg.type == "note_on" and msg.vel > 0 then
     held[msg.ch * 128 + msg.note] = msg.note
+    if params:get("style") == FOLLOW then trainer_note(msg.note) end
     redraw()
   elseif msg.type == "note_off" or (msg.type == "note_on" and msg.vel == 0) then
     held[msg.ch * 128 + msg.note] = nil
@@ -658,12 +796,18 @@ function init()
   params:add_trigger("resend", "resend lights")
   params:set_action("resend", function() send_lights() end)
 
-  for _, id in ipairs({"channel", "base_note", "row_offset",
+  for _, id in ipairs({"channel",
                        "root_col", "scale_col", "box_rest",
                        "triad", "triad_col", "mark_raised7", "raised7_col"}) do
     params:set_action(id, function() send_lights() end)
   end
-  params:set_action("style", function()
+  for _, id in ipairs({"base_note", "row_offset"}) do
+    params:set_action(id, function() trainer_reset(); send_lights() end)
+  end
+  params:set_action("style", function(v)
+    trainer_stop()
+    trainer_reset()
+    if v == FOLLOW then trainer_start() end
     send_lights(); grid_redraw(); redraw()
   end)
 
@@ -682,6 +826,7 @@ function init()
 end
 
 function cleanup()
+  trainer_stop()
   params:write()
   if painter then clock.cancel(painter) end
   all_notes_off(out)
