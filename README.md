@@ -8,7 +8,7 @@ a circle of fifths on the grid.
 
 | | |
 |---|---|
-| E1 | light style: **root + triad** / **root + scale** / **rainbow** / **one octave** / **layout + scale** (default) |
+| E1 | lights: **root + triad** / **rainbow** (scale only) / **normal** (the LinnStrument's own 4ths colors, no scale) |
 | E2 | key, around the circle of fifths |
 | E3 | major / natural minor / harmonic minor |
 | K2 | relative major ↔ minor |
@@ -16,27 +16,16 @@ a circle of fifths on the grid.
 
 **Grid:** ring of 12 keys = circle of fifths (C at top, neighbouring keys medium),
 center = relative major/minor, top right = scale type, row 4 = degree ladder,
-bottom right = one-octave keyboard. In **one octave** style, row 8 cols 1–2 move
-the box down / up to the next root.
+bottom right = one-octave keyboard.
 
-## Seeing the whole scale
+## Rainbow
 
-- **rainbow** — root is white, then the colors walk around the color wheel as the
-  scale goes up, so neighbouring degrees look related and a run up the scale is a sweep:
-  1 white · 2 orange · 3 yellow · 4 lime · 5 green · 6 cyan · 7 magenta
-  (raised 7th in harmonic minor: pink).
-- **one octave** — lights a single root-to-root run in a compact 4-column hand
-  shape, in rainbow colors. Everything else goes dark (or one plain color: set
-  `one octave: outside box` to **scale tones**). Move it with grid row 8 cols 1–2.
-
-- **layout + scale** (default, for jamming) — your LinnStrument's own 4ths colors
-  stay on every pad outside the scale, so the layout you know is still there.
-  Scale notes are white, 1-3-5 (the tonic chord) yellow, the raised 7th in harmonic
-  minor magenta. **C stays red even when it's in the scale** (`keep C red`, on by
-  default), so your main landmark never moves. Colors: `scale tones`, `1-3-5`.
+Only the scale is lit. The root is white, then the colors walk around the color
+wheel as the scale goes up: 1 white · 2 orange · 3 yellow · 4 lime · 5 green ·
+6 cyan · 7 magenta (raised 7th in harmonic minor: pink). Everything else is dark.
 
 The LinnStrument has no per-pad brightness over MIDI — each pad is one of 10 colors
-or off — so order is shown with the color wheel instead.
+or off.
 
 ## What you're playing
 

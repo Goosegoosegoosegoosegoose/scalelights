@@ -8,11 +8,9 @@
 -- K2: relative major <-> minor
 -- K3: page (circle / degrees /
 --     playing: notes + chord)
--- E1: light style (root + triad /
---     root + scale / rainbow /
---     one octave / layout + scale)
--- grid row 8, cols 1-2: move the
---     one-octave box down / up
+-- E1: lights: root + triad /
+--     rainbow (scale only) /
+--     normal (LinnStrument's own)
 --
 -- grid: ring = circle of 5ths
 --   center = relative maj/min
@@ -73,12 +71,9 @@ local DEGREE_COLOR_NAMES = {"yellow", "white", "green", "white", "green", "white
 local RAINBOW = {8, 9, 2, 10, 3, 4, 6}
 local RAINBOW_NAMES = {"white", "orange", "yellow", "lime", "green", "cyan", "magenta"}
 local RAISED7_RAINBOW = 11   -- pink
-local STYLES = {"root + triad", "root + scale", "rainbow", "one octave", "layout + scale"}
--- "layout + scale": your LinnStrument's own 4ths colors stay on every pad outside
--- the scale (and on C, if "keep C red" is on); scale notes get one color, 1-3-5 another
-local LAYOUT = 5
+local STYLES = {"root + triad", "rainbow", "normal"}
+local NORMAL = 3
 local DEFAULT = 0   -- CC22 0 = the LinnStrument's own note-light color
-local SHAPE_BTNS = {{1,8},{2,8}}   -- grid: one-octave box down / up
 
 -- grid layout: a 12-point ring in the left 7x7, clockwise from the top
 local RING = {{4,1},{6,1},{7,2},{7,4},{7,6},{6,7},{4,7},{2,7},{1,6},{1,4},{1,2},{2,1}}
@@ -247,70 +242,30 @@ local function raised7(d)
 end
 
 local function pad_color(pc, deg)
+  local style = params:get("style")
+  if style == NORMAL then return DEFAULT end   -- no scale, just the 4ths layout
   local d = deg[pc]
-  if params:get("style") == LAYOUT then
-    if pc == 0 and params:get("keep_c") == 2 then return DEFAULT end
-    if not d then return DEFAULT end
-    if raised7(d) then return color_value("raised7_col") end
-    if d == 1 or d == 3 or d == 5 then return color_value("chord_col") end
-    return color_value("scale_col")
-  end
   if not d then return OFF end
-
-  if params:get("style") >= 3 then
+  if style == 2 then
+    -- rainbow: only the scale, colors walking around the wheel as it goes up
     if raised7(d) then return RAISED7_RAINBOW end
     return RAINBOW[d]
   end
-
-  if params:get("style") == 1 then
-    -- root + triad (harmonic minor's raised 7th can still be marked)
-    if d == 7 and mode == 3 and params:get("mark_raised7") == 2 then
-      return color_value("raised7_col")
-    end
-    return DEGREE_COLORS[d]
-  end
-
-  -- simple: root + one scale color (with optional triad / raised 7th marks)
-  if d == 1 then return color_value("root_col") end
-  if d == 7 and mode == 3 and params:get("mark_raised7") == 2 then
-    return color_value("raised7_col")
-  end
-  if params:get("triad") == 2 and (d == 3 or d == 5) then
-    return color_value("triad_col")
-  end
-  return color_value("scale_col")
+  -- root + triad (harmonic minor's raised 7th can still be marked)
+  if raised7(d) then return color_value("raised7_col") end
+  return DEGREE_COLORS[d]
 end
 
 local function pad_note(col, row)
   return params:get("base_note") + (col - 1) + row * params:get("row_offset")
 end
 
--- every pad on the surface that plays the tonic, low to high
-local function root_pads()
-  local tonic = spell_scale()[1].pc
-  local roots = {}
-  for row = 0, 7 do
-    for col = 1, COLUMNS do
-      local n = pad_note(col, row)
-      if n % 12 == tonic then roots[#roots + 1] = {col = col, row = row, note = n} end
-    end
-  end
-  table.sort(roots, function(a, b)
-    if a.note ~= b.note then return a.note < b.note end
-    return a.col < b.col
-  end)
-  return roots
-end
-
-local shape_pos = 1   -- which root the one-octave box starts from
 -- CC20 = column, CC21 = row, CC22 = color. Row is persistent, so set it once per row.
 local function paint(clear, slow)
   if not linn then return end
   local ch = params:get("channel")
   local cols = COLUMNS
   local deg = degree_map(spell_scale())
-  local box = (params:get("style") == 4) and octave_box() or nil
-  local rest = params:get("box_rest")
   for row = 0, 7 do
     linn:cc(21, row, ch)
     for col = 1, cols do
@@ -318,10 +273,6 @@ local function paint(clear, slow)
       if not clear then
         local pc = pad_note(col, row) % 12
         color = pad_color(pc, deg)
-        if box and not box[row * 100 + col] and color ~= OFF then
-          -- outside the box: dark, or one plain color so the box stands out
-          color = (rest == 2) and color_value("scale_col") or OFF
-        end
       end
       linn:cc(20, col, ch)
       linn:cc(22, color, ch)
@@ -398,9 +349,6 @@ local function grid_redraw()
     g:led(x, y, deg[pc] and level(deg[pc]) or 0)
   end
   for d = 1, 7 do g:led(9 + d, 4, level(d)) end
-  if params:get("style") == 4 then
-    for _, c in ipairs(SHAPE_BTNS) do g:led(c[1], c[2], 8) end
-  end
   g:refresh()
 end
 
@@ -502,14 +450,10 @@ local function draw_degrees()
     screen.move(10, y); screen.text(scale[i].name)
     screen.move(28, y); screen.text(m.chords[i])
     local style = params:get("style")
-    if style == 1 or style >= 3 then
+    if style ~= NORMAL then
       local cname = (style == 1) and DEGREE_COLOR_NAMES[i] or RAINBOW_NAMES[i]
-      if style == LAYOUT then
-        cname = (i == 1 or i == 3 or i == 5) and COLORS[params:get("chord_col")]
-                or COLORS[params:get("scale_col")]
-      end
       if raised and params:get("mark_raised7") == 2 then
-        cname = (style == 1 or style == LAYOUT) and COLORS[params:get("raised7_col")] or "pink"
+        cname = (style == 1) and COLORS[params:get("raised7_col")] or "pink"
       end
       screen.move(54, y); screen.text(cname)
       screen.move(88, y); screen.text(DEGREE_NAMES[i] and DEGREE_NAMES[i]:sub(1, 7) or m.seventh:sub(1, 7))
@@ -541,7 +485,6 @@ function enc(n, d)
     params:delta("style", d)   -- its action repaints the lights
   elseif n == 2 then
     pos = util.wrap(pos + d, 1, 12)
-    shape_pos = 1
     changed()
   elseif n == 3 then
     mode = util.clamp(mode + d, 1, 3)
@@ -573,10 +516,6 @@ local function grid_key(x, y, z)
   end
   for i, c in ipairs(MODE_BTNS) do
     if c[1] == x and c[2] == y then mode = i; changed(); return end
-  end
-  if params:get("style") == 4 then
-    if x == SHAPE_BTNS[1][1] and y == SHAPE_BTNS[1][2] then shape_pos = shape_pos - 1; changed() end
-    if x == SHAPE_BTNS[2][1] and y == SHAPE_BTNS[2][2] then shape_pos = shape_pos + 1; changed() end
   end
 end
 
@@ -641,22 +580,14 @@ function init()
   end)
 
   params:add_separator("lights")
-  params:add_option("style", "style", STYLES, LAYOUT)
-  params:add_option("root_col", "root", COLORS, 3)
-  params:add_option("scale_col", "scale tones", COLORS, 9)
-  params:add_option("triad", "show tonic triad", {"off", "on"}, 1)
-  params:add_option("triad_col", "triad 3rd & 5th", COLORS, 4)
+  params:add_option("style", "lights", STYLES, 1)
   params:add_option("mark_raised7", "mark raised 7th", {"off", "on"}, 2)
   params:add_option("raised7_col", "raised 7th", COLORS, 7)
-  params:add_option("chord_col", "1-3-5 (layout + scale)", COLORS, 3)
-  params:add_option("keep_c", "keep C red (layout + scale)", {"off", "on"}, 2)
-  params:add_option("box_rest", "one octave: outside box", {"off", "scale tones"}, 1)
   params:add_trigger("resend", "resend lights")
   params:set_action("resend", function() send_lights() end)
 
   for _, id in ipairs({"channel",
-                       "root_col", "scale_col", "box_rest", "chord_col", "keep_c",
-                       "triad", "triad_col", "mark_raised7", "raised7_col"}) do
+                       "mark_raised7", "raised7_col"}) do
     params:set_action(id, function() send_lights() end)
   end
   for _, id in ipairs({"base_note", "row_offset"}) do
