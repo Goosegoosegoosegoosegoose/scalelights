@@ -8,7 +8,7 @@ a circle of fifths on the grid.
 
 | | |
 |---|---|
-| E1 | light style: **root + triad** / **root + scale** / **rainbow** / **one octave** / **follow the lights** |
+| E1 | light style: **root + triad** / **root + scale** / **rainbow** / **one octave** / **layout + scale** (default) |
 | E2 | key, around the circle of fifths |
 | E3 | major / natural minor / harmonic minor |
 | K2 | relative major ↔ minor |
@@ -29,15 +29,14 @@ the box down / up to the next root.
   shape, in rainbow colors. Everything else goes dark (or one plain color: set
   `one octave: outside box` to **scale tones**). Move it with grid row 8 cols 1–2.
 
-- **follow the lights** — a scale trainer. Every root pad blinks; play one, and
-  the next note of the scale blinks. Hit it and it stays lit in its rainbow color,
-  so the scale builds up under your fingers. Go up to the octave and back down;
-  wrong notes are ignored ("not that one" on screen). When you finish, the whole
-  scale lights for two seconds, then it starts over. The circle page's bottom line
-  says what's next, e.g. `next: E (3) up`. Changing key or scale restarts the run.
+- **layout + scale** (default, for jamming) — your LinnStrument's own 4ths colors
+  stay on every pad outside the scale, so the layout you know is still there.
+  Scale notes are white, 1-3-5 (the tonic chord) yellow, the raised 7th in harmonic
+  minor magenta. **C stays red even when it's in the scale** (`keep C red`, on by
+  default), so your main landmark never moves. Colors: `scale tones`, `1-3-5`.
 
 The LinnStrument has no per-pad brightness over MIDI — each pad is one of 10 colors
-or off — so order is shown with the color wheel and with blinking instead.
+or off — so order is shown with the color wheel instead.
 
 ## What you're playing
 
